@@ -16,10 +16,10 @@ from packaging.version import parse as parse_version
 
 # The URL to your online file containing the list of available applications.
 # This should point to the raw version of your installer_garbage.py on a Gist or GitHub.
-APP_LIST_URL = "URL_GIST_ATAU_GITHUB_RAW_ANDA"  # <-- IMPORTANT: REPLACE WITH YOUR URL
+APP_LIST_URL = "https://gist.githubusercontent.com/Oenm176/6139afb6a8874015c6b72cc1970423d5/raw/a3f9d777191b801bbfbb9f1b8f1a0fe60884a61c/gistfile1.txt"  
 
 # The URL to your online file containing the latest application version info.
-VERSION_CHECK_URL = "URL_RAW_KE_FILE_VERSION_JSON_ANDA"  # <-- IMPORTANT: REPLACE WITH YOUR URL
+VERSION_CHECK_URL = "https://raw.githubusercontent.com/Oenm176/Initverify/refs/heads/main/version.json" 
 
 # The current version of this application. Increment this for each new release.
 CURRENT_VERSION = "1.0.0"
