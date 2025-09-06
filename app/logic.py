@@ -16,10 +16,10 @@ from packaging.version import parse as parse_version
 
 # The URL to your online file containing the list of available applications.
 # This should point to the raw version of your installer_garbage.py on a Gist or GitHub.
-APP_LIST_URL = "https://gist.githubusercontent.com/Oenm176/6139afb6a8874015c6b72cc1970423d5/raw/gistfile1.txt"  
+APP_LIST_URL = "https://gist.githubusercontent.com/Oenm176/6139afb6a8874015c6b72cc1970423d5/raw/gistfile1.txt"
 
 # The URL to your online file containing the latest application version info.
-VERSION_CHECK_URL = "https://raw.githubusercontent.com/Oenm176/Initverify/refs/heads/main/version.json" 
+VERSION_CHECK_URL = "https://raw.githubusercontent.com/Oenm176/Initverify/main/version.json"
 
 # The current version of this application. Increment this for each new release.
 CURRENT_VERSION = "1.0.0"
@@ -99,7 +99,7 @@ class CommandProcessor:
             print(f"Failed to check for updates: {e}")
 
     def _find_app_url(self, app_name_to_find):
-        """Mencari URL aplikasi di dalam struktur data baru yang bersarang."""
+        """Searches for an app's URL within the nested category structure."""
         for category in self.apps_database.values():
             if app_name_to_find in category:
                 return category[app_name_to_find]
@@ -128,7 +128,7 @@ class CommandProcessor:
 
         handler = command_map.get(command)
         if handler:
-            # Pass arguments only if the handler is not 'clear' or 'help', etc.
+            # Pass arguments only to the commands that need them.
             if command in ["add", "remove"]:
                 handler(args)
             else:
@@ -137,43 +137,41 @@ class CommandProcessor:
             self.log_emitter(f"Error: Command '{command}' not recognized. Type 'help' for assistance.", "error")
 
     def show_available_apps(self):
-        """Menampilkan daftar aplikasi dalam format grid multi-kolom (maksimal 3 per baris)."""
+        """Displays the list of apps in a multi-column grid format."""
         self.log_emitter("Available applications to install:", "info")
         
         if not self.apps_database:
             self.log_emitter("No application lists available.", "warning")
             return
 
-        # Kita akan membuat tabel HTML untuk merapikan kolom
+        # Build an HTML table to format the output into clean columns.
         html_output = "<table style='width:100%'>"
         column_count = 0
-        
-        # Mengubah dictionary menjadi list agar bisa dihitung
         categories = list(self.apps_database.items())
         
         for i, (category_name, apps) in enumerate(categories):
-            # Jika ini adalah kolom pertama di baris baru (atau kolom ke-0)
+            # Start a new row every 3 columns
             if column_count % 3 == 0:
                 html_output += "<tr>"
 
-            # Setiap kategori menjadi satu sel kolom dengan lebar 33%
+            # Each category becomes a table cell
             html_output += "<td style='vertical-align:top; padding-right: 20px; width:33%;'>"
             html_output += f"<b>--- {category_name} ---</b><br/>"
             
-            # Daftar semua aplikasi di dalam kategori tersebut
+            # List all apps within the category
             for app_name in apps.keys():
                 html_output += f"- {app_name}<br/>"
             
             html_output += "</td>"
             column_count += 1
 
-            # Jika ini adalah kolom terakhir di baris, atau item terakhir secara keseluruhan
+            # End the row after 3 columns or if it's the last item
             if column_count % 3 == 0 or i == len(categories) - 1:
                 html_output += "</tr>"
 
         html_output += "</table>"
-        self.log_emitter(html_output, "info") # Kirim sebagai satu pesan HTML
-        self.log_emitter("\nGunakan perintah 'add &lt;nama_app1&gt; [nama_app2] ...' untuk menambahkan item.", "info")
+        self.log_emitter(html_output, "info")
+        self.log_emitter("\nUse the 'add &lt;app_name1&gt; [app_name2] ...' command to add items.", "info")
 
     def add_to_cart(self, app_names):
         """Adds one or more applications to the shopping cart."""
@@ -181,7 +179,8 @@ class CommandProcessor:
             self.log_emitter("Error: Please specify an app name. Example: add steam vscode", "error")
             return
         for app_name in app_names:
-            if app_name in self.apps_database:
+            # Use the finder function to check if the app exists in any category
+            if self._find_app_url(app_name):
                 if app_name in self.shopping_cart:
                     self.log_emitter(f"'{app_name}' is already in the cart.", "warning")
                 else:
@@ -254,7 +253,6 @@ class CommandProcessor:
         for app_name in apps_to_install:
             self.log_emitter(f"\n--- Processing '{app_name}' ---", "command")
             
-            # Gunakan fungsi pencarian baru untuk mendapatkan URL
             installer_url = self._find_app_url(app_name)
             if not installer_url:
                 self.log_emitter(f"Could not find URL for '{app_name}'. Skipping.", "error")
@@ -286,20 +284,16 @@ class CommandProcessor:
         self.progress_emitter.started.emit(app_name)
         local_filepath = None
         try:
-            # --- PERUBAHAN DIMULAI DI SINI ---
-            
-            # 1. Buat header penyamaran agar terlihat seperti browser biasa.
+            # Use a browser-like User-Agent to prevent getting blocked (403 Forbidden).
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
 
-            # 2. Tambahkan 'headers=headers' ke dalam permintaan requests.get()
             with requests.get(url, stream=True, allow_redirects=True, timeout=30, headers=headers) as r:
-            # --- PERUBAHAN SELESAI ---
-                
                 r.raise_for_status()
                 total_size = int(r.headers.get('content-length', 0))
                 
+                # Determine filename from headers or URL
                 if 'content-disposition' in r.headers:
                     filename = r.headers['content-disposition'].split('filename=')[-1].strip("'\"")
                 else:
@@ -316,6 +310,7 @@ class CommandProcessor:
                         downloaded_size += len(chunk)
                         current_time = time.time()
                         
+                        # Throttle progress updates to avoid overwhelming the UI
                         if current_time - last_update_time > 0.2:
                             elapsed_time = current_time - start_time
                             if total_size > 0 and elapsed_time > 0:
@@ -325,10 +320,10 @@ class CommandProcessor:
                                 
                                 progress_data = {
                                     'percent': int(percentage),
-                                    'downloaded': downloaded_size / (1024 * 1024),
-                                    'total': total_size / (1024 * 1024),
-                                    'speed': speed / (1024 * 1024),
-                                    'eta': eta
+                                    'downloaded': downloaded_size / (1024 * 1024),  # in MB
+                                    'total': total_size / (1024 * 1024),      # in MB
+                                    'speed': speed / (1024 * 1024),          # in MB/s
+                                    'eta': eta                               # in seconds
                                 }
                                 self.progress_emitter.progress.emit(progress_data)
                                 last_update_time = current_time
@@ -340,6 +335,7 @@ class CommandProcessor:
             return None
         finally:
             self.progress_emitter.finished.emit()
+            # Ensure the progress bar finishes at 100% on success
             if local_filepath and total_size > 0:
                  self.progress_emitter.progress.emit({
                      'percent': 100, 
@@ -356,7 +352,7 @@ class CommandProcessor:
         
         command_list = []
         if file_path.lower().endswith(".msi"):
-            # Use msiexec for .msi files
+            # Use the dedicated Windows Installer executable for .msi files
             command_list = ["msiexec", "/i", file_path]
         else:
             # Execute .exe files directly
