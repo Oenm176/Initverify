@@ -23,7 +23,7 @@
 
 <br>
 
-![InitVerify Screenshot](https://i.imgur.com/kS5zL5C.png)
+![InitVerify Screenshot](app/asset/Screenshot 2025-09-06 190614.png)
 
 
 ## 📝 About The Project
