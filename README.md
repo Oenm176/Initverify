@@ -49,7 +49,7 @@ The project also comes with advanced features like dynamic application list upda
 * **Advanced Progress Bar**: Track the download process with speed and ETA information.
 * **Portable**: No installation required. Just extract and run.
 
----
+
 
 ## 🚀 Getting Started
 
