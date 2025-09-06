@@ -5,68 +5,79 @@
 
 import os
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QLabel,
-    QTextEdit, QLineEdit
+    QTextEdit, QLineEdit, QPushButton, QSizePolicy, QApplication
 )
-from PySide6.QtCore import Signal, QObject, Qt
-from PySide6.QtGui import QFont, QColor, QPalette, QIcon, QTextCursor
-
+from PySide6.QtCore import Signal, QObject, Qt, QRectF, QSize
+from PySide6.QtGui import (
+    QFont, QColor, QPalette, QIcon, QTextCursor
+)
 
 class LogSignal(QObject):
-    """A simple signal object to safely pass log messages across threads."""
-    log_message = Signal(str, str)  # message, message_type
-
+    """A signal object to safely pass log messages across threads."""
+    log_message = Signal(str, str)
 
 class ProgressSignal(QObject):
     """A signal object to safely pass download progress data across threads."""
-    started = Signal(str)      # Emits when a download starts -> sends app_name
-    progress = Signal(dict)    # Emits during download -> sends progress data dictionary
-    finished = Signal()        # Emits when a download is finished or has failed
+    started = Signal(str)
+    progress = Signal(dict)
+    finished = Signal()
 
+class StatusSignal(QObject):
+    """A signal object to safely pass online/offline status across threads."""
+    online_status_changed = Signal(bool)
 
 class SilentInstallerApp(QWidget):
     """The main application window class."""
+
     def __init__(self, root_dir):
+        """
+        Initializes the main window.
+
+        Args:
+            root_dir (str): The absolute path to the project's root directory.
+        """
         super().__init__()
         self.root_dir = root_dir
         self.command_processor = None
         
-        # Instantiate the signal objects
+        # Instantiate the signal objects for cross-thread communication.
         self.log_signal = LogSignal()
         self.progress_signal = ProgressSignal()
+        self.status_signal = StatusSignal()
 
-        # Connect signals to their corresponding handler methods (slots)
+        # Connect signals to their corresponding handler methods (slots).
         self.log_signal.log_message.connect(self.append_log)
         self.progress_signal.started.connect(self.on_download_started)
         self.progress_signal.progress.connect(self.on_progress_updated)
         self.progress_signal.finished.connect(self.on_download_finished)
+        self.status_signal.online_status_changed.connect(self.update_status_indicator)
         
-        # Initialize the user interface
+        # Initialize the user interface.
         self.init_ui()
 
     def set_command_processor(self, processor):
         """
         Links this View to its Logic controller (CommandProcessor).
-        This is a form of dependency injection.
+        This is a form of dependency injection set up by main.py.
         """
         self.command_processor = processor
         self.command_input.returnPressed.connect(self._handle_command_entered)
 
     def _handle_command_entered(self):
-        """Slot that triggers when the user presses Enter in the command input."""
-        if not self.command_processor:
-            return
-        
+        """
+        Slot that triggers when the user presses Enter in the command input field.
+        It forwards the command to the logic processor for handling.
+        """
+        if not self.command_processor: return
         command_text = self.command_input.text().strip()
-        if not command_text:
-            return
-        
-        # Avoid logging confirmation answers (y/n) as if they were commands
+        if not command_text: return
+
+        # Avoid logging confirmation answers (like 'y' or 'n') as if they were commands.
         if not self.command_processor.awaiting_confirmation:
             self.log_message(f"> {command_text}", "user")
-            
-        # Forward the command to the logic processor
+        
         self.command_processor.process_command(command_text)
         self.command_input.clear()
 
@@ -79,7 +90,7 @@ class SilentInstallerApp(QWidget):
         icon_path_relative = os.path.join("app", "asset", "logo", "logo_ico.ico")
         icon_path_absolute = os.path.join(self.root_dir, icon_path_relative)
         self.setWindowIcon(QIcon(icon_path_absolute))
-
+        
         # --- Dark Theme Palette ---
         dark_palette = self.palette()
         dark_palette.setColor(QPalette.ColorRole.Window, QColor(40, 44, 52))
@@ -95,7 +106,7 @@ class SilentInstallerApp(QWidget):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-
+        
         # --- Header Widget ---
         header_widget = QWidget()
         header_widget.setStyleSheet("background-color: #2D4059; padding: 10px; border-bottom: 1px solid #21252B;")
@@ -105,58 +116,84 @@ class SilentInstallerApp(QWidget):
         header_title.setStyleSheet("color: #E0FBFC; background: transparent; border: none;")
         header_layout.addWidget(header_title)
         main_layout.addWidget(header_widget)
-
+        
         # --- Output Display (QTextEdit) ---
         self.output_display = QTextEdit()
         self.output_display.setReadOnly(True)
         self.output_display.setStyleSheet("background-color: #282C34; color: #ABB2BF; border: none; padding: 10px; font-family: 'Consolas'; font-size: 10pt;")
         main_layout.addWidget(self.output_display, 1)
-
+        
         # --- Input Container ---
         input_container = QWidget()
         input_container.setStyleSheet("background-color: #21252B; padding: 10px;")
         input_layout = QVBoxLayout(input_container)
-        input_layout.setContentsMargins(10, 5, 10, 10)
+        # Set margins (left, top, right, bottom). The right margin is larger for padding.
+        input_layout.setContentsMargins(10, 5, 20, 10)
         input_layout.setSpacing(5)
 
+        # --- Prompt Bar (contains "Command Prompt" label and status indicator) ---
+        prompt_bar_layout = QHBoxLayout()
+        prompt_bar_layout.setContentsMargins(0,0,0,0)
+        
         command_label = QLabel("Command Prompt")
         command_label.setFont(QFont("Segoe UI", 9))
         
+        # Use a simple QLabel for the status indicator, as its text is set with rich HTML.
+        self.status_indicator = QLabel()
+        
+        # Arrange the prompt bar: [Label] -> [Expanding Space] -> [Indicator]
+        prompt_bar_layout.addWidget(command_label)
+        prompt_bar_layout.addStretch()
+        prompt_bar_layout.addWidget(self.status_indicator)
+        
+        input_layout.addLayout(prompt_bar_layout)
+        
+        # --- Command Input (QLineEdit) ---
         self.command_input = QLineEdit()
-        self.command_input.setPlaceholderText("Ketik perintah di sini.")
+        self.command_input.setPlaceholderText("Type the command here.")
         self.command_input.setStyleSheet("""
             QLineEdit { background-color: #282C34; color: #D3D7DF; border: 1px solid #3E4A51; 
                          padding: 8px; border-radius: 4px; font-family: 'Consolas'; font-size: 10pt; }""")
         
-        input_layout.addWidget(command_label)
         input_layout.addWidget(self.command_input)
         main_layout.addWidget(input_container)
-        
+
         # --- Finalize Layout ---
         self.setLayout(main_layout)
-        self.log_message("Terminal siap. Ketik 'help' untuk melihat daftar perintah.", "info")
+        self.log_message("The terminal is ready. Type ‘help’ to see a list of commands.", "info")
+        self.update_status_indicator(False) # Set initial status to Offline
+
+    def update_status_indicator(self, is_online):
+        """Slot to update the online/offline status indicator using rich text."""
+        if is_online:
+            # Combine a unicode character (●) and text into a single HTML string.
+            rich_text = "<span style='font-size: 14pt; color: lime;'>●</span> <b style='color: #4CAF50;'>Online</b>"
+        else:
+            rich_text = "<span style='font-size: 14pt; color: red;'>●</span> <b style='color: #F44336;'>Offline</b>"
+        
+        self.status_indicator.setText(rich_text)
 
     def on_download_started(self, app_name):
-        """Slot to handle the start of a download. Disables input."""
-        self.append_log(f"Men-download {app_name}...", "info")
+        """Slot to handle the start of a download. Disables the command input."""
+        self.append_log(f"Downloading {app_name}...", "info")
         self.output_display.append("") # Add a blank line for the progress bar
         self.command_input.setEnabled(False)
 
     def on_progress_updated(self, progress_data):
-        """Slot to handle progress updates. Redraws the text progress bar."""
+        """Slot to handle progress updates. Redraws the text-based progress bar."""
         progress_string = self._format_progress_string(progress_data)
         
-        # Use QTextCursor to overwrite the last line of the text edit
+        # Use QTextCursor to overwrite the last line of the text edit.
         cursor = self.output_display.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
         cursor.removeSelectedText()
         cursor.insertBlock()
-        cursor.insertHtml(progress_string) # Use insertHtml to render colors
+        cursor.insertHtml(progress_string) # Use insertHtml to render colored text.
         self.output_display.setTextCursor(cursor)
-    
+
     def on_download_finished(self):
-        """Slot to handle the end of a download. Re-enables input."""
+        """Slot to handle the end of a download. Re-enables the command input."""
         self.command_input.setEnabled(True)
         self.command_input.setFocus()
 
@@ -173,28 +210,34 @@ class SilentInstallerApp(QWidget):
         eta = data.get('eta', 0)
         eta_str = f"{int(eta // 60):02d}:{int(eta % 60):02d}"
 
-        # Return a formatted HTML string with colors
-        return (
-            f"<span style='color: #d55fde;'>{bar}</span> "
-            f"<span style='color: #4CAF50;'>{downloaded}/{total} MB</span> "
-            f"<span style='color: #4CAF50;'>{speed} MB/s</span> "
-            f"<span style='color: #00BCD4;'>eta {eta_str}</span>"
-        )
+        # Return a formatted HTML string with colors.
+        return (f"<span style='color: #d55fde;'>{bar}</span> "
+                f"<span style='color: #4CAF50;'>{downloaded}/{total} MB</span> "
+                f"<span style='color: #4CAF50;'>{speed} MB/s</span> "
+                f"<span style='color: #00BCD4;'>eta {eta_str}</span>")
 
     def append_log(self, message, message_type="info"):
-        """Slot that appends a colored, formatted message to the output display."""
-        if message_type == "system_command" and message == "clear_screen":
-            self.output_display.clear(); return
+        """
+        Slot that appends a colored, formatted message to the output display.
+        Also handles special system commands like 'clear' and 'restart'.
+        """
+        if message_type == "system_command":
+            if message == "clear_screen":
+                self.output_display.clear()
+                return
+            elif message == "restart_app":
+                # Exit the application with the special restart code (5).
+                QApplication.instance().exit(5)
+                return
         
         color_map = {
-            "info": "#ABB2BF", "success": "#98C379", 
-            "warning": "#E5C07B", "error": "#E06C75", 
-            "command": "#61AFEF", "user": "#E5C07B",
+            "info": "#ABB2BF", "success": "#98C379", "warning": "#E5C07B", 
+            "error": "#E06C75", "command": "#61AFEF", "user": "#E5C07B",
             "update": "#E0FBFC"
         }
         color = color_map.get(message_type, "#ABB2BF")
         self.output_display.append(f"<span style='white-space: pre-wrap; color: {color};'>{message}</span>")
 
     def log_message(self, message, msg_type):
-        """Helper method to safely emit a log signal from the main thread."""
+        """Helper method to safely emit a log signal."""
         self.log_signal.log_message.emit(message, msg_type)

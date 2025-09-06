@@ -33,7 +33,8 @@ def main():
     # signal emitters so the logic can communicate back to the UI.
     processor = CommandProcessor(
         log_emitter=window.log_message,
-        progress_emitter=window.progress_signal
+        progress_emitter=window.progress_signal,
+        status_emitter=window.status_signal
     )
 
     # Link the main window to its command processor.
@@ -42,11 +43,15 @@ def main():
     # Display the main window to the user.
     window.show()
 
-    # Start the application's event loop and ensure a clean exit.
-    sys.exit(app.exec())
+    # Start the application's event loop. When the app closes, this will
+    # return an exit code (e.g., 0 for normal exit, 5 for restart).
+    return app.exec()
 
 
 if __name__ == "__main__":
     # This standard Python construct ensures that main() is called
     # only when this script is executed directly.
-    main()
+    exit_code = main()
+    # Exit the script with the code provided by the application.
+    # The run.py script will read this code to decide whether to restart.
+    sys.exit(exit_code)
