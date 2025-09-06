@@ -1,6 +1,10 @@
 certifi==2025.8.3
 charset-normalizer==3.4.3
 idna==3.10
+packaging==25.0
+PyQt6==6.9.1
+PyQt6-Qt6==6.9.2
+PyQt6_sip==13.10.2
 PySide6==6.9.2
 PySide6_Addons==6.9.2
 PySide6_Essentials==6.9.2
