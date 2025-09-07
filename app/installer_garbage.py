@@ -21,7 +21,7 @@ AVAILABLE_APPS = {
         },
         "teamspeak": {
             "url_64": "https://files.teamspeak-services.com/pre_releases/client/6.0.0-beta2/teamspeak-client.msi",
-            "url_32": "https://files.teamspeak-services.com/pre_releases/client/6.0.0-beta2/teamspeak-client.msi" # Asumsikan link sama jika 32-bit tidak ada
+            "url_32": "https://files.teamspeak-services.com/pre_releases/client/6.0.0-beta2/teamspeak-client.msi" 
         }
     },
 
