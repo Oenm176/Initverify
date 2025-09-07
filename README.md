@@ -23,7 +23,7 @@
 
 <br>
 
-![InitVerify Screenshot](https://i.imgur.com/kS5zL5C.png)
+![InitVerify Screenshot](app/asset/preview-apps.png)
 
 
 ## 📝 About The Project
