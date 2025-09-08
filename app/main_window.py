@@ -4,6 +4,7 @@
 # information received from the logic component.
 
 import os
+import sys
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel,
@@ -14,19 +15,33 @@ from PySide6.QtGui import (
     QFont, QColor, QPalette, QIcon, QTextCursor
 )
 
+def resource_path(relative_path):
+    """
+    Gets the absolute path to a resource, which works for both development
+    mode and for a bundled PyInstaller executable.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores its path in _MEIPASS.
+        base_path = sys._MEIPASS
+    except Exception:
+        # In development, the base path is the current working directory.
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 class LogSignal(QObject):
     """A signal object to safely pass log messages across threads."""
-    log_message = Signal(str, str)
+    log_message = Signal(str, str)  # Emits: message, message_type
 
 class ProgressSignal(QObject):
     """A signal object to safely pass download progress data across threads."""
-    started = Signal(str)
-    progress = Signal(dict)
-    finished = Signal()
+    started = Signal(str)      # Emits when a download starts -> sends app_name
+    progress = Signal(dict)    # Emits during download -> sends progress data dictionary
+    finished = Signal()        # Emits when a download is finished or has failed
 
 class StatusSignal(QObject):
     """A signal object to safely pass online/offline status across threads."""
-    online_status_changed = Signal(bool)
+    online_status_changed = Signal(bool) # Emits True for online, False for offline
 
 class SilentInstallerApp(QWidget):
     """The main application window class."""
@@ -87,9 +102,9 @@ class SilentInstallerApp(QWidget):
         self.setWindowTitle('InitVerify.')
         self.setGeometry(100, 100, 800, 600)
         
-        icon_path_relative = os.path.join("app", "asset", "logo", "logo_ico.ico")
-        icon_path_absolute = os.path.join(self.root_dir, icon_path_relative)
-        self.setWindowIcon(QIcon(icon_path_absolute))
+        # Use the resource_path helper to ensure the icon is found in the bundled .exe
+        icon_path = resource_path("logo_ico.ico")
+        self.setWindowIcon(QIcon(icon_path))
         
         # --- Dark Theme Palette ---
         dark_palette = self.palette()

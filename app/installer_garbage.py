@@ -47,14 +47,14 @@ AVAILABLE_APPS = {
         }
     },
 
-    "Media Players": {
+     "Media Players": {
         "vlc": {
-            "url_64": "https://get.videolan.org/vlc/last/win64/",
-            "url_32": "https://get.videolan.org/vlc/last/win32/"
+            "url_64": "https://mirror.nevacloud.com/applications/videolan/vlc/3.0.21/win64/vlc-3.0.21-win64.exe",
+            "url_32": "https://mirror.nevacloud.com/applications/videolan/vlc/3.0.21/win32/vlc-3.0.21-win32.exe"
         },
-        "kmplayer": {
-            "url_64": "https://update.kmplayer.com/player/download/kmp64",
-            "url_32": "https://update.kmplayer.com/player/download/kmp"
+        "potplayer": {
+            "url_64": "https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup64.exe",
+            "url_32": "https://t1.daumcdn.net/potplayer/PotPlayer/Version/Latest/PotPlayerSetup.exe"
         }
     }
 }

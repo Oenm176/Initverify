@@ -1,4 +1,8 @@
 # app/logic.py
+# This file contains the core application logic (the "Controller").
+# It handles user commands, manages state (like the shopping cart),
+# performs background tasks (downloading, installing), and communicates
+# results back to the UI via signals.
 
 import subprocess
 import threading
@@ -13,90 +17,154 @@ from urllib.parse import urlparse
 from packaging.version import parse as parse_version
 
 # --- Configuration Constants ---
+
+# The URL to your online file containing the list of available applications.
+# This should point to the raw version of your installer_garbage.py on a Gist or GitHub.
 APP_LIST_URL = "https://gist.githubusercontent.com/Oenm176/6139afb6a8874015c6b72cc1970423d5/raw/gistfile1.txt"
+
+# The URL to your online file containing the latest application version info.
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/Oenm176/Initverify/main/version.json"
+
+# The current version of this application. Increment this for each new release.
 CURRENT_VERSION = "1.0.0"
 
+
 class CommandProcessor:
-    def __init__(self, log_emitter, progress_emitter, status_emitter):
+    """
+    Handles all application logic, including command processing, state management (cart),
+    and background tasks like downloading and installing.
+    """
+    def __init__(self, log_emitter, progress_emitter, status_emitter, root_dir):
+        """
+        Initializes the CommandProcessor.
+
+        Args:
+            log_emitter (function): A callable to emit log messages to the UI.
+            progress_emitter (QObject): A signal object for download progress.
+            status_emitter (QObject): A signal object for online/offline status.
+            root_dir (str): The absolute path to the project's root directory.
+        """
         self.log_emitter = log_emitter
         self.progress_emitter = progress_emitter
         self.status_emitter = status_emitter
+        self.root_dir = root_dir 
         self.apps_database = self._load_app_database()
         self.shopping_cart = set()
         self.awaiting_confirmation = False
+
+        # Start background threads for checking app updates and internet connectivity.
         threading.Thread(target=self.check_for_updates, daemon=True).start()
         threading.Thread(target=self._check_connectivity_loop, daemon=True).start()
 
     def _check_connectivity_loop(self):
+        """
+        Periodically checks for internet connectivity in a background thread and
+        emits a signal with the current status (online/offline).
+        """
         while True:
             try:
+                # Send a lightweight HEAD request to a highly available server (Google).
                 requests.head("http://www.google.com", timeout=5)
                 self.status_emitter.online_status_changed.emit(True)
             except (requests.ConnectionError, requests.Timeout):
                 self.status_emitter.online_status_changed.emit(False)
+            
+            # Wait for 10 seconds before the next check.
             time.sleep(10)
 
     def _load_app_database(self):
+        """
+        Tries to load the application list from the online URL (APP_LIST_URL).
+        If the online fetch fails for any reason (no internet, bad URL), it
+        falls back to using the local, bundled `installer_garbage.py` file.
+        """
         try:
             self.log_emitter("Fetching latest application list from the internet...", "info")
             response = requests.get(APP_LIST_URL, timeout=5)
             response.raise_for_status()
+
+            # Safely execute the downloaded text to extract the AVAILABLE_APPS dictionary.
             local_scope = {}
             exec(response.text, {}, local_scope)
             apps = local_scope.get("AVAILABLE_APPS", {})
+
             if apps:
                 self.log_emitter("Successfully fetched the latest application list.", "success")
                 return apps
             else:
                 raise ValueError("AVAILABLE_APPS variable not found in the online file.")
+
         except Exception as e:
             self.log_emitter(f"Failed to fetch online list: {e}", "warning")
             self.log_emitter("Using bundled (offline) application list as a fallback.", "warning")
+            # Fallback to the local file if the online fetch fails.
             from .installer_garbage import AVAILABLE_APPS
             return AVAILABLE_APPS
 
     def check_for_updates(self):
+        """
+        Checks for a new application version from the VERSION_CHECK_URL in a
+        background thread. If a newer version is found, it emits a log message
+        to notify the user.
+        """
         try:
-            time.sleep(2)
+            time.sleep(2)  # Small delay to not interfere with startup.
             response = requests.get(VERSION_CHECK_URL, timeout=5)
             response.raise_for_status()
             data = response.json()
+
             latest_version_str = data.get("latest_version")
             download_url = data.get("download_url")
-            if not latest_version_str: return
+
+            if not latest_version_str:
+                return
+
+            # Use the 'packaging' library to reliably compare semantic versions.
             if parse_version(latest_version_str) > parse_version(CURRENT_VERSION):
                 if download_url:
-                    update_message = (f"Pembaruan tersedia! Versi {latest_version_str} siap diunduh.\n"
-                                      f"Download di sini: <a href='{download_url}' style='color: #00BCD4;'>{download_url}</a>")
+                    update_message = (f"Update available! Version {latest_version_str} is ready to download.\n"
+                                      f"Download here: <a href='{download_url}' style='color: #00BCD4;'>{download_url}</a>")
                 else:
-                    update_message = (f"Pembaruan tersedia! Versi {latest_version_str} telah dirilis.\n"
-                                      f"Silakan periksa halaman Rilis di repositori GitHub untuk men-download.")
+                    update_message = (f"Update available! Version {latest_version_str} has been released.\n"
+                                      f"Please check the Releases page on the GitHub repository to download.")
                 self.log_emitter(update_message, "update")
         except Exception as e:
+            # Fails silently to not interrupt the user if there's no internet.
             print(f"Failed to check for updates: {e}")
 
     def _is_64bit_windows(self):
+        """Checks if the current OS is 64-bit Windows."""
         return platform.machine().endswith('64')
         
     def _find_app_url(self, app_name_to_find):
+        """
+        Finds the correct app URL based on the OS architecture (64-bit or 32-bit).
+        """
         is_64bit = self._is_64bit_windows()
         for category in self.apps_database.values():
             if app_name_to_find in category:
                 app_data = category[app_name_to_find]
                 if is_64bit:
+                    # On 64-bit OS, prefer 64-bit app, but fall back to 32-bit if not available.
                     return app_data.get("url_64") or app_data.get("url_32")
                 else:
+                    # On 32-bit OS, ONLY a 32-bit app is acceptable.
                     return app_data.get("url_32")
         return None
 
     def process_command(self, command_text):
+        """
+        The main command router. Parses user input from the UI and calls the
+        appropriate handler function based on the command.
+        """
         if self.awaiting_confirmation:
             self.handle_install_confirmation(command_text)
             return
+
         parts = command_text.split()
         command = parts[0].lower() if parts else ""
         args = parts[1:]
+
         command_map = {
             "show-apps": self.show_available_apps,
             "add": self.add_to_cart,
@@ -112,14 +180,21 @@ class CommandProcessor:
         }
         handler = command_map.get(command)
         if handler:
-            if command in ["add", "remove"]: handler(args)
-            else: handler()
+            # Pass arguments only to the commands that need them.
+            if command in ["add", "remove"]:
+                handler(args)
+            else:
+                handler()
         else:
             self.log_emitter(f"Error: Command '{command}' not recognized. Type 'help' for assistance.", "error")
 
     def create_system_profile(self):
+        """
+        Gathers key system information (OS, hardware, etc.) and saves it
+        to an `architecture.json` file for debugging purposes.
+        """
         try:
-            self.log_emitter("Mengumpulkan profil sistem...", "info")
+            self.log_emitter("Gathering system profile...", "info")
             ram = psutil.virtual_memory()
             disk = psutil.disk_usage('C:')
             system_info = {
@@ -134,25 +209,33 @@ class CommandProcessor:
             file_path = "architecture.json"
             with open(file_path, 'w') as f:
                 json.dump(system_info, f, indent=4)
-            self.log_emitter(f"Profil sistem berhasil disimpan ke {file_path}", "success")
+            self.log_emitter(f"System profile saved to {file_path}", "success")
         except Exception as e:
-            self.log_emitter(f"Gagal membuat profil sistem: {e}", "error")
+            self.log_emitter(f"Failed to create system profile: {e}", "error")
 
     def show_system_profile(self):
+        """
+        Reads the `architecture.json` file and displays its contents in a
+        formatted way in the terminal output.
+        """
         try:
             file_path = "architecture.json"
             with open(file_path, 'r') as f:
                 data = json.load(f)
+            
+            # Use json.dumps for pretty-printing the dictionary.
             formatted_json = json.dumps(data, indent=4)
-            self.log_emitter("Menampilkan isi dari architecture.json:", "info")
+            self.log_emitter("Displaying contents of architecture.json:", "info")
+            # Use <pre> tag to preserve formatting in the QTextEdit widget.
             self.log_emitter(f"<pre>{formatted_json}</pre>", "info")
         except FileNotFoundError:
-            self.log_emitter(f"Error: File '{file_path}' tidak ditemukan.", "error")
-            self.log_emitter("Silakan jalankan perintah 'sys-info' terlebih dahulu.", "info")
+            self.log_emitter(f"Error: File '{file_path}' not found.", "error")
+            self.log_emitter("Please run the 'sys-info' command first.", "info")
         except Exception as e:
-            self.log_emitter(f"Gagal membaca file profil sistem: {e}", "error")
+            self.log_emitter(f"Failed to read system profile file: {e}", "error")
 
     def show_help(self):
+        """Displays the help message with all available commands."""
         help_text = (
             "Available commands:\n"
             "  - show-apps                : Lists all available applications.\n"
@@ -170,6 +253,10 @@ class CommandProcessor:
         self.log_emitter(help_text, "info")
 
     def show_available_apps(self):
+        """
+        Formats and displays the list of available applications in a
+        multi-column grid by generating an HTML table.
+        """
         self.log_emitter("Available applications to install:", "info")
         if not self.apps_database:
             self.log_emitter("No application lists available.", "warning")
@@ -189,9 +276,10 @@ class CommandProcessor:
                 html_output += "</tr>"
         html_output += "</table>"
         self.log_emitter(html_output, "info")
-        self.log_emitter("\nUse the 'add &lt;nama_app1&gt; [nama_app2] ...' command to add items.", "info")
+        self.log_emitter("\nUse the 'add &lt;app_name1&gt; [app_name2] ...' command to add items.", "info")
 
     def add_to_cart(self, app_names):
+        """Adds one or more specified applications to the shopping cart."""
         if not app_names:
             self.log_emitter("Error: Please specify an app name. Example: add steam vscode", "error")
             return
@@ -207,14 +295,16 @@ class CommandProcessor:
         self.show_cart()
 
     def show_cart(self):
+        """Displays the current contents of the shopping cart to the user."""
         if not self.shopping_cart: self.log_emitter("Your shopping cart is currently empty.", "info")
         else:
             self.log_emitter("Current items in cart:", "info")
             for app_name in sorted(list(self.shopping_cart)):
                 self.log_emitter(f"  - {app_name}", "info")
-            self.log_emitter("\nUse 'install' to begin, 'remove &lt;nama_aplikasi&gt;' to remove an item, or 'remove-all' to clear the cart.", "info")
+            self.log_emitter("\nUse 'install' to begin, 'remove &lt;app_name&gt;' to remove an item, or 'remove-all' to clear the cart.", "info")
 
     def remove_from_cart(self, app_names):
+        """Removes one or more specified applications from the shopping cart."""
         if not app_names:
             self.log_emitter("Error: Please specify the app name to remove.", "error"); return
         for app_name in app_names:
@@ -226,10 +316,15 @@ class CommandProcessor:
         self.show_cart()
 
     def clear_cart(self):
+        """Removes all items from the shopping cart."""
         if not self.shopping_cart: self.log_emitter("The cart is already empty.", "warning")
         else: self.shopping_cart.clear(); self.log_emitter("All items have been removed from the cart.", "success")
 
     def initiate_installation(self):
+        """
+        Starts the installation confirmation process by listing cart items
+        and asking for user confirmation (y/n).
+        """
         if not self.shopping_cart: self.log_emitter("Cart is empty. Nothing to install.", "warning"); return
         self.log_emitter("The following applications will be installed:", "info")
         for app_name in sorted(list(self.shopping_cart)):
@@ -238,6 +333,10 @@ class CommandProcessor:
         self.awaiting_confirmation = True
 
     def handle_install_confirmation(self, response):
+        """
+        Handles the user's 'y/n' response. If 'yes', it starts the main
+        installation process in a new thread.
+        """
         response = response.lower()
         self.awaiting_confirmation = False
         if response in ['y', 'yes']:
@@ -249,7 +348,11 @@ class CommandProcessor:
             self.show_cart()
 
     def run_full_installation(self):
-        download_folder = "installer_downloads"
+        """
+        Manages the entire installation workflow for all apps in the cart.
+        This runs in a background thread to keep the UI responsive.
+        """
+        download_folder = os.path.join(self.root_dir, "installer_downloads")
         os.makedirs(download_folder, exist_ok=True)
         apps_to_install = list(self.shopping_cart)
         for app_name in apps_to_install:
@@ -274,6 +377,10 @@ class CommandProcessor:
             self.log_emitter("The shopping cart is now empty.", "success")
 
     def _download_file(self, url, folder, app_name):
+        """
+        Downloads a file from a URL, emitting progress signals along the way.
+        It uses a browser-like User-Agent to avoid being blocked.
+        """
         self.progress_emitter.started.emit(app_name)
         local_filepath = None
         try:
@@ -314,6 +421,10 @@ class CommandProcessor:
                  self.progress_emitter.progress.emit({'percent': 100, 'downloaded': total_size / (1024*1024), 'total': total_size/ (1024*1024), 'speed': 0, 'eta': 0})
 
     def _run_installer(self, file_path):
+        """
+        Runs an installer (.exe or .msi) and waits for it to complete.
+        It intelligently chooses the correct execution method based on file extension.
+        """
         self.log_emitter(f"Running installer: {file_path}", "command")
         self.log_emitter("Please complete the setup process in the window that appears...", "info")
         command_list = []

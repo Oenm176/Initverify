@@ -26,27 +26,38 @@ if __name__ == "__main__":
     # This block runs only when the script is executed directly.
 
     if is_admin():
-        # This block runs if the script ALREADY has admin rights.
+        # --- This block runs if the script ALREADY has admin rights ---
         
-        # Set initial exit_code to our special restart code (5)
-        # to ensure the loop runs at least once.
+        # Set the initial exit_code to our special restart code (5)
+        # to ensure the main application loop runs at least once.
         exit_code = 5
         
         # Keep relaunching the app as long as it exits with the restart code.
         while exit_code == 5:
-            print("Administrator privileges granted. Starting the main application...")
-
-            # 1. Define the absolute path to the python.exe inside the virtual environment.
-            python_executable_in_venv = os.path.join(script_dir, "venv", "Scripts", "python.exe")
-
-            # 2. Define the absolute path to the main application script.
-            main_script_path = os.path.join(script_dir, "main.py")
-
-            # 3. Launch the main application and wait for it to close,
-            #    then capture its exit code.
-            process = subprocess.Popen([python_executable_in_venv, main_script_path])
-            exit_code = process.wait()
+            # Check if the script is running as a bundled .exe from PyInstaller.
+            if getattr(sys, 'frozen', False):
+                # If running as a bundled executable, all code is in memory.
+                # We can directly import and call the main function.
+                print("Running as a bundled executable...")
+                from main import main as main_app_func
+                exit_code = main_app_func()
+            else:
+                # If running as a .py script (in development).
+                print("Administrator privileges granted. Starting the main application via subprocess...")
+                
+                # 1. Define the absolute path to the python.exe inside the virtual environment.
+                #    This is critical to ensure the main app uses the correct packages.
+                python_executable_in_venv = os.path.join(script_dir, "venv", "Scripts", "python.exe")
+                
+                # 2. Define the absolute path to the main application script.
+                main_script_path = os.path.join(script_dir, "main.py")
+                
+                # 3. Launch the main application and wait for it to close,
+                #    then capture its exit code.
+                process = subprocess.Popen([python_executable_in_venv, main_script_path])
+                exit_code = process.wait()
             
+            # Check if the application exited with the restart signal.
             if exit_code == 5:
                 print("Restart signal received. Relaunching application...")
 
@@ -54,7 +65,7 @@ if __name__ == "__main__":
         sys.exit(exit_code)
 
     else:
-        # This block runs if the script DOES NOT have admin rights.
+        # --- This block runs if the script DOES NOT have admin rights ---
         # Re-launch this same script (run.py) with an elevation request,
         # which will trigger the Windows UAC (User Account Control) prompt.
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 1)

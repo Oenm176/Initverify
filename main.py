@@ -34,7 +34,8 @@ def main():
     processor = CommandProcessor(
         log_emitter=window.log_message,
         progress_emitter=window.progress_signal,
-        status_emitter=window.status_signal
+        status_emitter=window.status_signal,
+        root_dir=ROOT_DIR
     )
 
     # Link the main window to its command processor.
