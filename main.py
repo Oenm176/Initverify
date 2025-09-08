@@ -11,16 +11,25 @@ from PySide6.QtWidgets import QApplication
 from app.main_window import SilentInstallerApp
 from app.logic import CommandProcessor
 
-# Define the absolute path to the project's root directory.
-# This is crucial for finding assets and fixing working directory issues when elevated.
-ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+# --- Define the project's root directory ---
+# This logic correctly determines the root path for both development (.py)
+# and deployed (.exe) modes.
+if getattr(sys, 'frozen', False):
+    # If the application is run as a bundled executable by PyInstaller,
+    # sys.executable points to the .exe file itself.
+    ROOT_DIR = os.path.dirname(sys.executable)
+else:
+    # If running as a .py script, __file__ points to this script.
+    ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+# -------------------------------------------
 
 
 def main():
     """Initializes, connects, and runs the main application components."""
 
     # CRITICAL FIX: Set the current working directory to the project root.
-    # This solves issues where elevated processes default to C:\Windows\System32.
+    # This solves issues where elevated processes default to C:\Windows\System32
+    # and ensures files like 'architecture.json' are saved in the correct place.
     os.chdir(ROOT_DIR)
 
     # Initialize the core Qt application instance.
@@ -30,7 +39,8 @@ def main():
     window = SilentInstallerApp(root_dir=ROOT_DIR)
 
     # Create the command processor (the "Logic") and inject the window's
-    # signal emitters so the logic can communicate back to the UI.
+    # signal emitters and the root_dir so the logic can communicate back to the UI
+    # and create files in the correct location.
     processor = CommandProcessor(
         log_emitter=window.log_message,
         progress_emitter=window.progress_signal,
